@@ -1,0 +1,27 @@
+# Dependency directories
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+frontend/dist/
+
+# Local databases
+*.db
+backend/app/personalos.db
+personalos.db
+
+# Environmental variables
+.env
+frontend/.env
+backend/.env
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# OS specific overrides
+.DS_Store
+Thumbs.db
