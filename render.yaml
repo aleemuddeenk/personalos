@@ -27,7 +27,7 @@ services:
     staticPublishPath: frontend/dist
     routes:
       - type: rewrite
-        path: /*
+        source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
