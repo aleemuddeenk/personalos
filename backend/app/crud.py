@@ -22,6 +22,28 @@ def update_settings(db: Session, settings_in: schemas.SettingUpdate) -> models.S
         settings_record.user_name = settings_in.user_name
     db.commit()
     db.refresh(settings_record)
+
+    # Automatically add a default daily task if none exist
+    task_count = db.query(models.Task).count()
+    if task_count == 0:
+        default_task = models.Task(
+            name="Daily Habit Check-in",
+            time="20:00",
+            duration_minutes=15,
+            category="Habit",
+            is_active=True
+        )
+        db.add(default_task)
+        db.commit()
+        db.refresh(default_task)
+        
+        # Import dynamically to avoid circular dependencies
+        from app.scheduler import schedule_task_job
+        try:
+            schedule_task_job(default_task)
+        except Exception as e:
+            pass
+
     return settings_record
 
 
