@@ -30,6 +30,67 @@ def verify_webhook(request: Request):
             
     raise HTTPException(status_code=400, detail="Missing verification parameters")
 
+def parse_add_task_message(text: str):
+    import re
+    # 1. Match 12-hour time with colon (e.g. 6:30 PM, 6:30pm, 10:15 am)
+    match_12 = re.search(r'\b(1[0-2]|0?[1-9]):([0-5][0-9])\s*(AM|PM|am|pm|Am|Pm)\b', text)
+    # 2. Match 24-hour time with colon (e.g. 18:30 or 06:30)
+    match_24 = re.search(r'\b([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b', text)
+    # 3. Match 12-hour time without colon (e.g. 9 PM, 9pm)
+    match_12_no_colon = re.search(r'\b(1[0-2]|0?[1-9])\s*(AM|PM|am|pm|Am|Pm)\b', text)
+    
+    time_str = None
+    time_raw = None
+    
+    if match_12:
+        time_raw = match_12.group(0)
+        hour = int(match_12.group(1))
+        minute = int(match_12.group(2))
+        period = match_12.group(3).upper()
+        if period == "PM" and hour < 12:
+            hour += 12
+        elif period == "AM" and hour == 12:
+            hour = 0
+        time_str = f"{hour:02d}:{minute:02d}"
+    elif match_24:
+        time_raw = match_24.group(0)
+        hour = int(match_24.group(1))
+        minute = int(match_24.group(2))
+        time_str = f"{hour:02d}:{minute:02d}"
+    elif match_12_no_colon:
+        time_raw = match_12_no_colon.group(0)
+        hour = int(match_12_no_colon.group(1))
+        minute = 0
+        period = match_12_no_colon.group(2).upper()
+        if period == "PM" and hour < 12:
+            hour += 12
+        elif period == "AM" and hour == 12:
+            hour = 0
+        time_str = f"{hour:02d}:{minute:02d}"
+        
+    if not time_str:
+        return None
+        
+    # Extract the task name
+    # Remove command prefix "add task" or "add" (case-insensitive)
+    name_part = text
+    name_part = re.sub(r'(?i)^\s*add\s+task\s+', '', name_part)
+    name_part = re.sub(r'(?i)^\s*add\s+', '', name_part)
+    
+    # Remove the time part from the text
+    name_part = name_part.replace(time_raw, '')
+    
+    # Remove " at " if it exists (case-insensitive)
+    name_part = re.sub(r'(?i)\s+at\s+', ' ', name_part)
+    
+    # Clean up whitespace
+    name = re.sub(r'\s+', ' ', name_part).strip()
+    
+    if not name:
+        return None
+        
+    return {"name": name, "time": time_str}
+
 
 @router.post("")
 async def receive_webhook_message(request: Request, db: Session = Depends(get_db)):
@@ -139,6 +200,28 @@ async def receive_webhook_message(request: Request, db: Session = Depends(get_db
                         status_str = "pending" if l.status == "pending" else "failed/overdue"
                         reply_lines.append(f"• {l.task.time} - {l.task.name} ({status_str})")
                     reply = "\n".join(reply_lines)
+                
+                WhatsAppService.send_text_message(to_number=sender_number, text=reply)
+                
+            elif msg_upper.startswith("ADD ") or msg_upper.startswith("ADD TASK "):
+                parsed = parse_add_task_message(text_body)
+                if parsed:
+                    from app import schemas, scheduler
+                    task_data = schemas.TaskCreate(
+                        name=parsed["name"],
+                        time=parsed["time"],
+                        duration_minutes=30,  # Default budget
+                        category="Habit"
+                    )
+                    db_task = crud.create_task(db, task_data)
+                    scheduler.schedule_task_job(db_task)
+                    
+                    # Seed today's log for this new task
+                    crud.seed_today_logs(db)
+                    
+                    reply = f"✅ Success! Added daily task '{db_task.name}' scheduled for {db_task.time}."
+                else:
+                    reply = "❌ Could not parse task details. Please use format: 'add task [Name] at [Time]' (e.g. 'add task Workout at 6:30 PM' or 'add Study 18:00')."
                 
                 WhatsAppService.send_text_message(to_number=sender_number, text=reply)
         return {"status": "success"}
