@@ -1,5 +1,5 @@
 fastapi
-uvicornk971930
+uvicorn
 sqlalchemy
 apscheduler
 pydantic-settings
