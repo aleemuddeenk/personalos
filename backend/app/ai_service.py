@@ -18,7 +18,7 @@ class AIService:
             logger.info("Gemini API key not set. Using local mock generator.")
             return ""
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
         headers = {
             "content-type": "application/json"
         }
