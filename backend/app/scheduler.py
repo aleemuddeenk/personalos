@@ -66,8 +66,9 @@ def send_task_reminder_trigger(task_id: int):
         log.reminded_at = datetime.now()
         db.commit()
 
-        # Schedule the 20-minute failure check
-        check_time = datetime.now() + timedelta(minutes=20)
+        # Schedule the failure check after the task's mins budget (duration)
+        duration = task.duration_minutes if task.duration_minutes else 30
+        check_time = datetime.now() + timedelta(minutes=duration)
         job_id = f"check_{log.id}"
         scheduler.add_job(
             check_task_completion_timeout,
@@ -77,7 +78,7 @@ def send_task_reminder_trigger(task_id: int):
             args=[log.id],
             replace_existing=True
         )
-        logger.info(f"Scheduled 20-min safety check for log {log.id} at {check_time}")
+        logger.info(f"Scheduled safety check for log {log.id} after {duration} mins at {check_time}")
 
     except Exception as e:
         logger.error(f"Error in send_task_reminder_trigger: {e}")

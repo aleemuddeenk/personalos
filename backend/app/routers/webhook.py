@@ -73,8 +73,10 @@ async def receive_webhook_message(request: Request, db: Session = Depends(get_db
 
         if sender_number and text_body:
             logger.info(f"Processing message from {sender_number}: '{text_body}'")
+            msg_upper = text_body.upper().strip()
+            
             # Check if the user replied "DONE" (case-insensitive)
-            if text_body.upper() == "DONE":
+            if msg_upper == "DONE":
                 # Retrieve the most recent pending task log that has been reminded
                 log = crud.get_recent_pending_log_for_whatsapp(db)
                 
@@ -95,6 +97,50 @@ async def receive_webhook_message(request: Request, db: Session = Depends(get_db
                         to_number=sender_number,
                         text="⏰ I received 'DONE', but couldn't find an active pending task reminder. Make sure to complete them on time!"
                     )
+            elif msg_upper in ["TASK", "TASKS"]:
+                logs = crud.get_today_logs(db)
+                if not logs:
+                    reply = "📅 No tasks scheduled for today."
+                else:
+                    reply_lines = ["📅 Today's Tasks:"]
+                    logs = sorted(logs, key=lambda l: l.task.time if l.task else "")
+                    for l in logs:
+                        if not l.task:
+                            continue
+                        status_icon = "✅" if l.status == "completed" else ("❌" if l.status == "failed" else "⏳")
+                        reply_lines.append(f"{status_icon} {l.task.time} - {l.task.name} ({l.status})")
+                    reply = "\n".join(reply_lines)
+                
+                WhatsAppService.send_text_message(to_number=sender_number, text=reply)
+                
+            elif msg_upper in ["COMPLETE", "COMPLETED"]:
+                logs = crud.get_today_logs(db)
+                completed_logs = [l for l in logs if l.status == "completed" and l.task]
+                if not completed_logs:
+                    reply = "✅ No completed tasks for today yet. Keep going!"
+                else:
+                    reply_lines = ["✅ Completed Tasks Today:"]
+                    completed_logs = sorted(completed_logs, key=lambda l: l.task.time)
+                    for l in completed_logs:
+                        reply_lines.append(f"• {l.task.time} - {l.task.name}")
+                    reply = "\n".join(reply_lines)
+                
+                WhatsAppService.send_text_message(to_number=sender_number, text=reply)
+                
+            elif msg_upper in ["INCOMPLETE", "INCOMPLETED", "PENDING"]:
+                logs = crud.get_today_logs(db)
+                incomplete_logs = [l for l in logs if l.status in ["pending", "failed"] and l.task]
+                if not incomplete_logs:
+                    reply = "🎉 Amazing! You have no incomplete tasks today!"
+                else:
+                    reply_lines = ["⏰ Incomplete Tasks Today:"]
+                    incomplete_logs = sorted(incomplete_logs, key=lambda l: l.task.time)
+                    for l in incomplete_logs:
+                        status_str = "pending" if l.status == "pending" else "failed/overdue"
+                        reply_lines.append(f"• {l.task.time} - {l.task.name} ({status_str})")
+                    reply = "\n".join(reply_lines)
+                
+                WhatsAppService.send_text_message(to_number=sender_number, text=reply)
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error handling WhatsApp webhook message: {e}")
